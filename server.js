@@ -128,12 +128,14 @@ const loginRoutes = require("./Routes/LoginRoute");
 const contactRoutes = require("./Routes/ContactRoutes");
 const blogRoutes = require("./Routes/BlogRoutes");
 const careerRoutes = require("./Routes/CareerRoutes");
+const projectRoutes = require("./Routes/ProjectRoutes");
 
 // Register routes
 app.use("/api/admin", loginRoutes);
 app.use("/api/contact", contactRoutes);
 app.use("/api/blog", blogRoutes);
 app.use("/api/careers", careerRoutes); // Make sure this line is present
+app.use("/api", projectRoutes); // Add this line for projects
 
 // Test endpoint
 app.get("/", (req, res) => {
