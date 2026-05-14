@@ -259,46 +259,10 @@
 
 
 
-
-
 const express = require("express");
-const multer = require("multer");
-const path = require("path");
-const fs = require("fs");
 const db = require("../db");
 
 const router = express.Router();
-
-// Configure multer for image uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadDir = path.join(__dirname, "../uploads/projects");
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
-  },
-});
-
-const upload = multer({ 
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = /jpeg|jpg|png|gif|webp/;
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = allowedTypes.test(file.mimetype);
-    
-    if (mimetype && extname) {
-      return cb(null, true);
-    } else {
-      cb(new Error("Only image files are allowed"));
-    }
-  }
-});
 
 // Helper function to execute queries
 const executeQuery = (query, params) => {
@@ -313,14 +277,14 @@ const executeQuery = (query, params) => {
 // ==================== GET ALL PROJECTS ====================
 router.get("/projects", async (req, res) => {
   try {
-    // Explicitly select all columns including solution and approach
-    const query = "SELECT id, title, category, description, solution, approach, icon, gradient, image, client, location, created_at, updated_at FROM projects ORDER BY created_at DESC";
+    const query = "SELECT id, title, category, description, client_expectation, solution, approach, icon, gradient, created_at FROM projects ORDER BY created_at DESC";
     const results = await executeQuery(query);
     
     console.log("Fetched projects count:", results.length);
     if (results.length > 0) {
       console.log("First project sample:", {
         title: results[0].title,
+        hasClientExpectation: !!results[0].client_expectation,
         hasSolution: !!results[0].solution,
         hasApproach: !!results[0].approach
       });
@@ -344,7 +308,7 @@ router.get("/projects", async (req, res) => {
 router.get("/projects/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const query = "SELECT id, title, category, description, solution, approach, icon, gradient, image, client, location, created_at, updated_at FROM projects WHERE id = ?";
+    const query = "SELECT id, title, category, description, client_expectation, solution, approach, icon, gradient, created_at FROM projects WHERE id = ?";
     const results = await executeQuery(query, [id]);
     
     if (results.length === 0) {
@@ -369,29 +333,23 @@ router.get("/projects/:id", async (req, res) => {
 });
 
 // ==================== CREATE NEW PROJECT ====================
-router.post("/projects", upload.single("image"), async (req, res) => {
+router.post("/projects", async (req, res) => {
   try {
     const { 
       title, 
       category, 
       description, 
+      client_expectation,
       solution, 
       approach, 
       icon, 
-      gradient, 
-      client, 
-      location 
+      gradient
     } = req.body;
     
-    const image = req.file ? `/uploads/projects/${req.file.filename}` : null;
-    
-    console.log("Creating project:", { title, category, solution: solution || "empty", approach: approach || "empty" });
+    console.log("Creating project:", { title, category, client_expectation: client_expectation || "empty", solution: solution || "empty", approach: approach || "empty" });
     
     // Validate required fields
     if (!title || !category || !description) {
-      if (req.file) {
-        fs.unlinkSync(req.file.path);
-      }
       return res.status(400).json({ 
         success: false, 
         message: "Title, category and description are required" 
@@ -403,29 +361,25 @@ router.post("/projects", upload.single("image"), async (req, res) => {
         title, 
         category, 
         description, 
+        client_expectation,
         solution, 
         approach, 
         icon, 
         gradient, 
-        image, 
-        client, 
-        location, 
         created_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
     `;
     
     const result = await executeQuery(query, [
       title, 
       category, 
       description, 
+      client_expectation || null,
       solution || null,
       approach || null,
       icon || "📁", 
-      gradient || "from-gray-600 to-gray-400",
-      image,
-      client || null,
-      location || null
+      gradient || "from-gray-600 to-gray-400"
     ]);
     
     res.status(201).json({
@@ -435,9 +389,6 @@ router.post("/projects", upload.single("image"), async (req, res) => {
     });
   } catch (error) {
     console.error("Error creating project:", error);
-    if (req.file) {
-      fs.unlinkSync(req.file.path);
-    }
     res.status(500).json({ 
       success: false, 
       message: "Error creating project",
@@ -447,44 +398,31 @@ router.post("/projects", upload.single("image"), async (req, res) => {
 });
 
 // ==================== UPDATE PROJECT ====================
-router.put("/projects/:id", upload.single("image"), async (req, res) => {
+router.put("/projects/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const { 
       title, 
       category, 
       description, 
+      client_expectation,
       solution, 
       approach, 
       icon, 
-      gradient, 
-      client, 
-      location 
+      gradient
     } = req.body;
     
-    console.log("Updating project:", { id, title, solution: solution || "empty", approach: approach || "empty" });
+    console.log("Updating project:", { id, title, client_expectation: client_expectation || "empty", solution: solution || "empty", approach: approach || "empty" });
     
     // Check if project exists
     const checkQuery = "SELECT * FROM projects WHERE id = ?";
     const existingProject = await executeQuery(checkQuery, [id]);
     
     if (existingProject.length === 0) {
-      if (req.file) {
-        fs.unlinkSync(req.file.path);
-      }
       return res.status(404).json({ 
         success: false, 
         message: "Project not found" 
       });
-    }
-    
-    let image = existingProject[0].image;
-    
-    if (req.file) {
-      if (image && fs.existsSync(path.join(__dirname, "..", image))) {
-        fs.unlinkSync(path.join(__dirname, "..", image));
-      }
-      image = `/uploads/projects/${req.file.filename}`;
     }
     
     const query = `
@@ -493,13 +431,11 @@ router.put("/projects/:id", upload.single("image"), async (req, res) => {
         title = ?, 
         category = ?, 
         description = ?, 
+        client_expectation = ?,
         solution = ?, 
         approach = ?, 
         icon = ?, 
         gradient = ?, 
-        image = ?, 
-        client = ?, 
-        location = ?, 
         updated_at = NOW()
       WHERE id = ?
     `;
@@ -508,18 +444,16 @@ router.put("/projects/:id", upload.single("image"), async (req, res) => {
       title || existingProject[0].title,
       category || existingProject[0].category,
       description || existingProject[0].description,
+      client_expectation || existingProject[0].client_expectation,
       solution || existingProject[0].solution,
       approach || existingProject[0].approach,
       icon || existingProject[0].icon,
       gradient || existingProject[0].gradient,
-      image,
-      client || existingProject[0].client,
-      location || existingProject[0].location,
       id
     ]);
     
     // Fetch the updated project
-    const updatedProject = await executeQuery("SELECT * FROM projects WHERE id = ?", [id]);
+    const updatedProject = await executeQuery("SELECT id, title, category, description, client_expectation, solution, approach, icon, gradient, created_at FROM projects WHERE id = ?", [id]);
     
     res.json({
       success: true,
@@ -528,9 +462,6 @@ router.put("/projects/:id", upload.single("image"), async (req, res) => {
     });
   } catch (error) {
     console.error("Error updating project:", error);
-    if (req.file) {
-      fs.unlinkSync(req.file.path);
-    }
     res.status(500).json({ 
       success: false, 
       message: "Error updating project",
@@ -552,10 +483,6 @@ router.delete("/projects/:id", async (req, res) => {
         success: false, 
         message: "Project not found" 
       });
-    }
-    
-    if (project[0].image && fs.existsSync(path.join(__dirname, "..", project[0].image))) {
-      fs.unlinkSync(path.join(__dirname, "..", project[0].image));
     }
     
     const deleteQuery = "DELETE FROM projects WHERE id = ?";
